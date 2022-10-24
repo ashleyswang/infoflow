@@ -930,7 +930,6 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
 
                 version (analysis_log)
                     atomicOp!"+="(this.log_propagation_nodes_walked, propagation_nodes_walked_acc);
-                }
 
                 version (analysis_log)
                     atomicOp!"+="(this.log_propagation_nodes_walked, propagation_nodes_walked_acc);
