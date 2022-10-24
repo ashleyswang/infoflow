@@ -903,8 +903,6 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                 auto node = prop_nd_nodes.front;
                 prop_nd_nodes.removeFront();
 
-                mixin(LOG_TRACE!(`format(" propagating flags for node: %s", node)`));
-
                 auto children = ift_graph.get_edges_from(node);
                 foreach (i, edge; children) {
                     auto child = edge.dst;
@@ -913,9 +911,6 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                         prop_nd_nodes.insertBack(child);
                     } 
                 }
-
-                version (analysis_log)
-                    atomicOp!"+="(this.log_propagation_nodes_walked, 1);
             }
 
             auto elapsed = MonoTime.currTime - tmr_start;
