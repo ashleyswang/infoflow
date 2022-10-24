@@ -885,54 +885,37 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             return subtree_nodes.data;
         }
 
-        long propagate_nondeterministic_node(ref IFTGraphNode node) {
-            mixin(LOG_INFO!(`format("propagating %s", node)`));
-            // queue all nodes pointed to by the current node
-            long nodes_walked = 1;
-            auto targets = ift_graph.get_edges_from(node);
-            foreach (k, target; targets) {
-                auto child = target.dst;
-                // make child non-deterministic
-                if ((child.flags & IFTGraphNode.Flags.Nondeterministic) == 0) {
-                    child.flags |= IFTGraphNode.Flags.Nondeterministic;
-                    nodes_walked += propagate_nondeterministic_node(child);
-                } 
-            }
-            return nodes_walked;
-        }
-
         void propagate_node_flags() {
             // propagate the flow of node flags
             mixin(LOG_INFO!(`"propagating node flags"`));
 
             auto tmr_start = MonoTime.currTime;
 
-            // make a list of terminal nodes that already are propagated
-            auto propagated_leaf_nodes = appender!(IFTGraphNode[]);
-            mixin(LOG_INFO!(`" building list of propagated leaf nodes"`));
-            foreach (i, vert; ift_graph.nodes) {
-                // propagated is true
-                if ((vert.flags & IFTGraphNode.Flags.Propagated) > 0) {
-                    if ((vert.flags & IFTGraphNode.Flags.Nondeterministic) > 0)
-                        propagated_leaf_nodes ~= vert;
-                }
+            // make a list of non-deterministic terminal nodes
+            auto prop_nd_nodes = DList!IFTGraphNode();
+            mixin(LOG_INFO!(`" building list of non-deterministic terminal nodes"`));
+            foreach (i, node; ift_graph.nodes) {
+                if ((node.flags & IFTGraphNode.Flags.Nondeterministic) > 0)
+                    prop_nd_nodes.insertBack(node);
             }
+            
+            while (!prop_nd_nodes.empty) {
+                auto node = prop_nd_nodes.front;
+                prop_nd_nodes.removeFront();
 
-            // for each non-deterministic terminal node, propagate the flags to nodes they point to
-            import std.algorithm.searching : countUntil;
+                mixin(LOG_TRACE!(`format(" propagating flags for node: %s", node)`));
 
-            mixin(LOG_INFO!(
-                    `format(" propagating %d leaf nodes", propagated_leaf_nodes.data.length)`));
-
-            foreach (i, leaf; propagated_leaf_nodes.data) {
-                mixin(LOG_TRACE!(`format(" propagating flags for node: %s", leaf)`));
-                long propagation_nodes_walked_acc = propagate_nondeterministic_node(leaf);
+                auto children = ift_graph.get_edges_from(node);
+                foreach (i, edge; children) {
+                    auto child = edge.dst;
+                    if ((child.flags & IFTGraphNode.Flags.Nondeterministic) == 0) {
+                        child.flags |= IFTGraphNode.Flags.Nondeterministic;
+                        prop_nd_nodes.insertBack(child);
+                    } 
+                }
 
                 version (analysis_log)
-                    atomicOp!"+="(this.log_propagation_nodes_walked, propagation_nodes_walked_acc);
-
-                version (analysis_log)
-                    atomicOp!"+="(this.log_propagation_nodes_walked, propagation_nodes_walked_acc);
+                    atomicOp!"+="(this.log_propagation_nodes_walked, 1);
             }
 
             auto elapsed = MonoTime.currTime - tmr_start;
