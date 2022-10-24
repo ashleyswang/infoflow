@@ -11,6 +11,36 @@ import std.exception : enforce;
 import infoflow.util;
 import infoflow.analysis.ift.ift_graph;
 
+import std.concurrency : receiveOnly, send, spawn, Tid, thisTid;
+import core.atomic : atomicOp, atomicLoad;
+
+/*
+Queue that can be used safely among different threads. All access to an
+instance is automatically locked thanks to synchronized keyword.
+*/
+synchronized class SafeQueue(T) {
+    private T[] elements;
+
+    void push(T value) {
+        elements ~= value;
+    }
+
+    /// Return T.init if queue empty
+    T pop() {
+        import std.array : empty;
+        T value;
+        if (elements.empty)
+            return value;
+        value = elements[0];
+        elements = elements[1 .. $];
+        return value;
+    }
+
+    bool empty() {
+        return elements.empty;
+    }
+}
+
 template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
     import std.traits;
 
@@ -885,6 +915,20 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             return subtree_nodes.data;
         }
 
+        void propagate_nondeterminism() {
+            while (!nd_queue.empty()) {
+                auto node = nd_queue.pop();
+                auto children = ift_graph.get_edges_from(node);
+                foreach (i, edge; children) {
+                    auto child = edge.dst;
+                    if ((child.flags & IFTGraphNode.Flags.Nondeterministic) == 0) {
+                        child.flags |= IFTGraphNode.Flags.Nondeterministic;
+                        nd_queue.push(child);
+                    } 
+                }
+            }
+        }
+
         void propagate_node_flags() {
             // propagate the flow of node flags
             mixin(LOG_INFO!(`"propagating node flags"`));
@@ -892,31 +936,13 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             auto tmr_start = MonoTime.currTime;
 
             // make a list of non-deterministic terminal nodes
-            auto prop_nd_nodes = DList!IFTGraphNode();
-            mixin(LOG_INFO!(`" building list of non-deterministic terminal nodes"`));
+            auto nd_queue = new shared(SafeQueue!IFTGraphNode);;
             foreach (i, node; ift_graph.nodes) {
                 if ((node.flags & IFTGraphNode.Flags.Nondeterministic) > 0)
-                    prop_nd_nodes.insertBack(node);
+                    nd_queue.push(node);
             }
+
             
-            while (!prop_nd_nodes.empty) {
-                auto node = prop_nd_nodes.front;
-                prop_nd_nodes.removeFront();
-
-                mixin(LOG_TRACE!(`format(" propagating flags for node: %s", node)`));
-
-                auto children = ift_graph.get_edges_from(node);
-                foreach (i, edge; children) {
-                    auto child = edge.dst;
-                    if ((child.flags & IFTGraphNode.Flags.Nondeterministic) == 0) {
-                        child.flags |= IFTGraphNode.Flags.Nondeterministic;
-                        prop_nd_nodes.insertBack(child);
-                    } 
-                }
-
-                version (analysis_log)
-                    atomicOp!"+="(this.log_propagation_nodes_walked, 1);
-            }
 
             auto elapsed = MonoTime.currTime - tmr_start;
             version (analysis_log)
