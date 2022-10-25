@@ -11,8 +11,9 @@ import std.exception : enforce;
 import infoflow.util;
 import infoflow.analysis.ift.ift_graph;
 
-import std.concurrency : receiveOnly, send, spawn, Tid, thisTid;
+import std.concurrency : spawn;
 import core.atomic : atomicOp, atomicLoad;
+import core.thread;
 
 /*
 Queue that can be used safely among different threads. All access to an
@@ -70,6 +71,9 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
         bool aggressive_revisit_skipping = false;
         shared bool[InfoNodeWalk] global_node_walk_visited;
         shared InfoLeaf[] global_info_leafs_buffer;
+
+        /** helpers for propagate node flags **/
+        shared IFTGraphNode[] nondeterministic_node_queue;
 
         alias InfoLeafIndices = size_t[];
         InfoLeafIndices[TRegSet] clobbered_regs_sources;
@@ -465,7 +469,7 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                     graph_nodes_walked_acc++;
 
                 // use a cache so that we don't create duplicate vertices
-                IFTGraphNode curr_graph_vert;
+                shared IFTGraphNode curr_graph_vert;
 
                 // auto parent_vert = curr.parent.get;
                 // auto curr_node = curr.node;
@@ -481,7 +485,7 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                     version (analysis_log)
                         graph_nodes_cache_hits_acc++;
                 } else {
-                    curr_graph_vert = new IFTGraphNode(InfoView(curr_node, commit_ix));
+                    curr_graph_vert = new shared IFTGraphNode(InfoView(curr_node, commit_ix));
                     ift_graph.add_node(curr_graph_vert);
 
                     mixin(LOG_DEBUG!(
@@ -492,12 +496,15 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                 }
 
                 // update node flags
-                auto vert_flags = IFTGraphNode.Flags.Propagated;
+                curr_graph_vert.flags = IFTGraphNode.Flags.Propagated;
                 if (curr_node.is_final())
-                    vert_flags |= IFTGraphNode.Flags.Final;
-                if (!curr_node.is_deterministic())
-                    vert_flags |= IFTGraphNode.Flags.Nondeterministic;
-                curr_graph_vert.flags = vert_flags;
+                    atomicOp!"|="(curr_graph_vert.flags, IFTGraphNode.Flags.Final);
+                if (!curr_node.is_deterministic()) {
+                    atomicOp!"|="(curr_graph_vert.flags, IFTGraphNode.Flags.Nondeterministic);
+                    synchronized {
+                        nondeterministic_node_queue ~= curr_graph_vert;
+                    }
+                }
 
                 // connect ourselves to our parent (parent comes in the future, so edge us -> parent)
                 mixin(LOG_DEBUG!(
@@ -915,19 +922,19 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             return subtree_nodes.data;
         }
 
-        void propagate_nondeterminism() {
-            while (!nd_queue.empty()) {
-                auto node = nd_queue.pop();
-                auto children = ift_graph.get_edges_from(node);
-                foreach (i, edge; children) {
-                    auto child = edge.dst;
-                    if ((child.flags & IFTGraphNode.Flags.Nondeterministic) == 0) {
-                        child.flags |= IFTGraphNode.Flags.Nondeterministic;
-                        nd_queue.push(child);
-                    } 
-                }
-            }
-        }
+        // void propagate_nondeterminism(shared(SafeQueue!IFTGraphNode) nd_queue) {
+        //     while (!nd_queue.empty()) {
+        //         auto node = nd_queue.pop();
+        //         auto children = ift_graph.get_edges_from(node);
+        //         foreach (i, edge; children) {
+        //             auto child = edge.dst;
+        //             if ((child.flags & IFTGraphNode.Flags.Nondeterministic) == 0) {
+        //                 child.flags |= IFTGraphNode.Flags.Nondeterministic;
+        //                 nd_queue.push(child);
+        //             } 
+        //         }
+        //     }
+        // }
 
         void propagate_node_flags() {
             // propagate the flow of node flags
@@ -936,13 +943,17 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             auto tmr_start = MonoTime.currTime;
 
             // make a list of non-deterministic terminal nodes
-            auto nd_queue = new shared(SafeQueue!IFTGraphNode);;
-            foreach (i, node; ift_graph.nodes) {
-                if ((node.flags & IFTGraphNode.Flags.Nondeterministic) > 0)
-                    nd_queue.push(node);
-            }
+            // auto nd_queue = new shared(SafeQueue!IFTGraphNode);
+            // foreach (i, node; ift_graph.nodes) {
+            //     if ((node.flags & IFTGraphNode.Flags.Nondeterministic) > 0)
+            //         nd_queue.push(node);
+            // }
 
-            
+            // int max_threads = 10;
+            // for (auto i = 0; i < max_threads; i++) {
+            //     spawn(&propagate_nondeterminism, nd_queue);
+            // }
+            // thread_joinAll();
 
             auto elapsed = MonoTime.currTime - tmr_start;
             version (analysis_log)
