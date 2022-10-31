@@ -230,7 +230,7 @@ template IFTAnalysisDump(TRegWord, TMemWord, TRegSet) {
                     }
 
                     // set color according to flags
-                    node(ift_vert, ["shape": "box", "label": ift_vert.toString(), "color": node_color]);
+                    node(ift_vert, ["shape": "box", "label": ift_vert.to_string(), "color": node_color]);
                 }
                 foreach (ift_edge; ift.ift_graph.edges) {
                     // edge(edge.src, edge.dst, ["style": "dashed", "label": edge.label]);

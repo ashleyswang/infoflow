@@ -452,24 +452,24 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             bool[InfoNodeWalk] visited;
 
             version (analysis_log) {
-                long found_sources_acc = 0;
-                long visited_info_nodes_acc = 0;
-                long graph_nodes_walked_acc = 0;
-                long graph_nodes_cache_hits_acc = 0;
-                long graph_nodes_cache_misses_acc = 0;
-                long node_walk_duplicates_acc = 0;
+                shared long found_sources_acc = 0;
+                shared long visited_info_nodes_acc = 0;
+                shared long graph_nodes_walked_acc = 0;
+                shared long graph_nodes_cache_hits_acc = 0;
+                shared long graph_nodes_cache_misses_acc = 0;
+                shared long node_walk_duplicates_acc = 0;
             }
 
             // auto terminal_leaves = appender!(InfoLeaf[]);
             auto terminal_leaves_ids = appender!(size_t[]);
 
-            IFTGraphNode create_graph_vert(IFTGraphNode parent_vert, InfoNode curr_node, ulong commit_ix) {
+            shared IFTGraphNode create_graph_vert(IFTGraphNode parent_vert, InfoNode curr_node, ulong commit_ix) {
                 // create a graph vert for this commit
                 version (analysis_log)
-                    graph_nodes_walked_acc++;
+                    atomicOp!"+="(graph_nodes_walked_acc, 1);
 
                 // use a cache so that we don't create duplicate vertices
-                shared IFTGraphNode curr_graph_vert;
+                IFTGraphNode curr_graph_vert;
 
                 // auto parent_vert = curr.parent.get;
                 // auto curr_node = curr.node;
