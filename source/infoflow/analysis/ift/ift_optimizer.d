@@ -41,11 +41,11 @@ template IFTAnalysisOptimizer(TRegWord, TMemWord, TRegSet) {
         void optimize() {
             MonoTime tmr_start = MonoTime.currTime;
 
-            build_caches();
+            // build_caches();
 
-            if (enable_prune_deterministic_subtrees) {
-                prune_deterministic_subtrees();
-            }
+            // if (enable_prune_deterministic_subtrees) {
+            //     prune_deterministic_subtrees();
+            // }
 
             MonoTime tmr_end = MonoTime.currTime;
             auto elapsed = tmr_end - tmr_start;
@@ -91,7 +91,7 @@ template IFTAnalysisOptimizer(TRegWord, TMemWord, TRegSet) {
                         mixin(LOG_DEBUG!(` format("  visiting %s", curr)`));
                         log_prune_nodes_walked++;
 
-                        if ((curr.flags & IFTGraphNode.Flags.Deterministic) > 0) {
+                        if ((curr.flags & IFTGraphNode.Flags.Nondeterministic) > 0) {
                             // add the subtree root to the list of deterministic subtrees
                             deterministic_subtree_tops ~= curr;
 

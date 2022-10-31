@@ -119,6 +119,14 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
 
             if (enable_ift_graph) {
                 if (enable_ift_graph_analysis) {
+                    mixin(LOG_INFO!(`"calling cppgraph test 1"`));
+                    auto compact_graph = ift_graph.export_compact();
+                    enforce(GenericIFTCompactGraph.sizeof == compact_graph.sizeof,
+                        "compact graph and cpp generic graph have different sizes");
+                    GenericIFTCompactGraph cppgraph_input = cast(GenericIFTCompactGraph) compact_graph;
+                    GenericIFTCompactGraph cppgraph_output = ift_cppgraph_test_1(cppgraph_input);
+                    // import the graph back
+                    ift_graph.import_compact(cast(TIFTAnalysisGraph.IFTGraph.CompactGraph) cppgraph_output);
                     rebuild_graph_caches();
                     propagate_node_flags();
                 }
@@ -441,9 +449,9 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                 // auto curr_node = curr.node;
 
                 auto cached_graph_vert = ift_graph.find_in_cache(commit_ix, curr_node);
-                if (cached_graph_vert) {
+                if (cached_graph_vert.has) {
                     // if (likely(cached_graph_vert !is null)) {
-                    curr_graph_vert = cached_graph_vert;
+                    curr_graph_vert = cached_graph_vert.get;
 
                     mixin(LOG_DEBUG!(
                             `format("   reused graph node: %s", curr_graph_vert)`));
@@ -451,7 +459,7 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                     version (analysis_log)
                         graph_nodes_cache_hits_acc++;
                 } else {
-                    curr_graph_vert = new IFTGraphNode(InfoView(curr_node, commit_ix));
+                    curr_graph_vert = IFTGraphNode(InfoView(curr_node, commit_ix));
                     ift_graph.add_node(curr_graph_vert);
 
                     mixin(LOG_DEBUG!(
@@ -465,8 +473,10 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                 auto vert_flags = IFTGraphNode.Flags.Propagated;
                 if (curr_node.is_final())
                     vert_flags |= IFTGraphNode.Flags.Final;
-                if (curr_node.is_deterministic())
-                    vert_flags |= IFTGraphNode.Flags.Deterministic;
+                if (!curr_node.is_deterministic())
+                    vert_flags |= IFTGraphNode.Flags.Nondeterministic;
+                
+            
                 curr_graph_vert.flags = vert_flags;
 
                 // connect ourselves to our parent (parent comes in the future, so edge us -> parent)
@@ -508,10 +518,10 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                 IFTGraphNode last_node_vert;
 
                 auto cached_graph_vert = ift_graph.find_in_cache(last_node_last_touch_ix, last_node);
-                if (cached_graph_vert) {
-                    last_node_vert = cached_graph_vert;
+                if (cached_graph_vert.has) {
+                    last_node_vert = cached_graph_vert.get;
                 } else {
-                    last_node_vert = new IFTGraphNode(InfoView(last_node, last_node_last_touch_ix));
+                    last_node_vert = IFTGraphNode(InfoView(last_node, last_node_last_touch_ix));
                     ift_graph.add_node(last_node_vert);
                 }
 
@@ -821,69 +831,69 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             mixin(gen_analyze_work_loops!());
         }
 
-        IFTGraphNode[] find_graph_node_dependency_subtree(IFTGraphNode node_root) {
-            // the node root is the final endpoint of the subtree
-            // we want to search upward and find all the inner and leaf nodes
+        // IFTGraphNode[] find_graph_node_dependency_subtree(IFTGraphNode node_root) {
+        //     // the node root is the final endpoint of the subtree
+        //     // we want to search upward and find all the inner and leaf nodes
 
-            // we can do an iterative depth-first search
-            struct SubtreeSearchWalk {
-                IFTGraphNode node;
-                size_t depth;
-                // IFTGraphSubtree parent;
-            }
+        //     // we can do an iterative depth-first search
+        //     struct SubtreeSearchWalk {
+        //         IFTGraphNode node;
+        //         size_t depth;
+        //         // IFTGraphSubtree parent;
+        //     }
 
-            auto unvisited = DList!SubtreeSearchWalk();
-            bool[SubtreeSearchWalk] visited;
+        //     auto unvisited = DList!SubtreeSearchWalk();
+        //     bool[SubtreeSearchWalk] visited;
 
-            // IFTGraphNode[] subtree_nodes;
-            auto subtree_nodes = appender!(IFTGraphNode[]);
+        //     // IFTGraphNode[] subtree_nodes;
+        //     auto subtree_nodes = appender!(IFTGraphNode[]);
 
-            // auto root_subtree = new IFTGraphSubtree(node_root);
+        //     // auto root_subtree = new IFTGraphSubtree(node_root);
 
-            // add initial node to the unvisited list
-            unvisited.insertFront(SubtreeSearchWalk(node_root, 0));
+        //     // add initial node to the unvisited list
+        //     unvisited.insertFront(SubtreeSearchWalk(node_root, 0));
 
-            mixin(LOG_DEBUG!(`format(" building dependency subtree for node: %s", node_root)`));
+        //     mixin(LOG_DEBUG!(`format(" building dependency subtree for node: %s", node_root)`));
 
-            while (!unvisited.empty) {
-                // get current from first unvisited node
-                auto curr = unvisited.front;
+        //     while (!unvisited.empty) {
+        //         // get current from first unvisited node
+        //         auto curr = unvisited.front;
 
-                // mark as visited
-                unvisited.removeFront();
-                visited[curr] = true;
+        //         // mark as visited
+        //         unvisited.removeFront();
+        //         visited[curr] = true;
 
-                subtree_nodes ~= curr.node;
+        //         subtree_nodes ~= curr.node;
 
-                mixin(LOG_DEBUG!(`format("  visiting node: %s", curr)`));
+        //         mixin(LOG_DEBUG!(`format("  visiting node: %s", curr)`));
 
-                // get all dependencies: which are nodes that point to this one
-                auto deps = ift_graph.get_edges_to(curr.node);
-                for (auto i = 0; i < deps.length; i++) {
-                    auto dep = deps[i];
+        //         // get all dependencies: which are nodes that point to this one
+        //         auto deps = ift_graph.get_edges_to(curr.node);
+        //         for (auto i = 0; i < deps.length; i++) {
+        //             auto dep = deps[i];
 
-                    mixin(LOG_DEBUG!(`format("   found dependency: %s", dep)`));
+        //             mixin(LOG_DEBUG!(`format("   found dependency: %s", dep)`));
 
-                    // check if the dependency is a loop
-                    enforce(dep.src != curr.node,
-                        format("found loop in dependency subtree between %s and %s", curr.node, dep
-                            .src));
+        //             // check if the dependency is a loop
+        //             enforce(dep.src != curr.node,
+        //                 format("found loop in dependency subtree between %s and %s", curr.node, dep
+        //                     .src));
 
-                    // auto dep_walk = SubtreeSearchWalk(dep.src, curr.depth + 1, subtree_node);
-                    auto dep_walk = SubtreeSearchWalk(dep.src, curr.depth + 1);
-                    // NOTE: a node can be queued multiple times at different depths
+        //             // auto dep_walk = SubtreeSearchWalk(dep.src, curr.depth + 1, subtree_node);
+        //             auto dep_walk = SubtreeSearchWalk(dep.src, curr.depth + 1);
+        //             // NOTE: a node can be queued multiple times at different depths
 
-                    // if we have not visited this dependency yet, add it to the unvisited list
-                    if (!visited.get(dep_walk, false)) {
-                        unvisited.insertFront(dep_walk);
-                        mixin(LOG_DEBUG!(`format("     queued walk: %s", dep_walk)`));
-                    }
-                }
-            }
+        //             // if we have not visited this dependency yet, add it to the unvisited list
+        //             if (!visited.get(dep_walk, false)) {
+        //                 unvisited.insertFront(dep_walk);
+        //                 mixin(LOG_DEBUG!(`format("     queued walk: %s", dep_walk)`));
+        //             }
+        //         }
+        //     }
 
-            // return root_subtree;
-            return subtree_nodes.data;
-        }
+        //     // return root_subtree;
+        //     return subtree_nodes.data;
+        // }
 
         void propagate_node_flags() {
             // propagate the flow of node flags
@@ -891,95 +901,34 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
 
             auto tmr_start = MonoTime.currTime;
 
-            // make a list of leaf nodes that already are propagated
-            // IFTGraphNode[] propagated_leaf_nodes;
-            auto propagated_leaf_nodes = appender!(IFTGraphNode[]);
-            mixin(LOG_INFO!(`" building list of propagated leaf nodes"`));
-            foreach (i, vert; ift_graph.nodes) {
-                if ((vert.flags & IFTGraphNode.Flags.Propagated) > 0) {
-                    propagated_leaf_nodes ~= vert;
-                }
+            // make a list of non-deterministic terminal nodes
+            auto prop_nd_nodes = DList!IFTGraphNode();
+            mixin(LOG_INFO!(`" building list of non-deterministic terminal nodes"`));
+            foreach (i, node; ift_graph.nodes) {
+                if ((node.flags & IFTGraphNode.Flags.Nondeterministic) > 0)
+                    prop_nd_nodes.insertBack(node);
             }
 
-            // for each leaf node, propagate the flags to nodes they point to
-            import std.algorithm.searching : countUntil;
+            // mixin(LOG_INFO!(
+            //         `format(" propagating %d leaf nodes", prop_nd_nodes.length)`));
 
-            mixin(LOG_INFO!(
-                    `format(" propagating %d leaf nodes", propagated_leaf_nodes.data.length)`));
+            while (!prop_nd_nodes.empty) {
+                auto node = prop_nd_nodes.front;
+                prop_nd_nodes.removeFront();
 
-            auto unvisited = DList!IFTGraphNode();
-            bool[IFTGraphNode] visited;
+                mixin(LOG_TRACE!(`format(" propagating flags for node: %s", node)`));
 
-            foreach (i, leaf; propagated_leaf_nodes.data) {
-                mixin(LOG_TRACE!(`format(" propagating flags for node: %s", leaf)`));
-                // auto subtree_verts = find_graph_node_dependency_subtree(leaf);
-                // mixin(LOG_INFO!(`format("  found subtree of %d nodes", subtree_verts.length)`));
-                // // find the leaf in the subtree
-                // auto leaf_in_subtree = subtree_verts.countUntil(leaf);
-                // enforce(subtree_verts[leaf_in_subtree] == leaf, "leaf not found in subtree");
-
-                // if (leaf !in visited)
-                //     unvisited.insertFront(leaf);
-                unvisited.insertFront(leaf);
-
-                // now propagate upward
-
-                long propagation_nodes_walked_acc = 0;
-
-                while (!unvisited.empty) {
-                    auto curr = unvisited.front;
-                    unvisited.removeFront();
-                    visited[curr] = true;
-
-                    propagation_nodes_walked_acc += 1;
-
-                    mixin(LOG_DEBUG!(`format("  visiting node: %s", curr)`));
-
-                    // if the node is not yet propagated, we can assume that we are the first to touch it
-                    if ((curr.flags & IFTGraphNode.Flags.Propagated) == 0) {
-                        mixin(LOG_DEBUG!(`format("   copying leaf flags for node: %s", curr)`));
-                        curr.flags |= IFTGraphNode.Flags.Propagated;
-                        // if the leaf is final, we can also set the final flag
-                        if ((leaf.flags & IFTGraphNode.Flags.Final) > 0) {
-                            curr.flags |= IFTGraphNode.Flags.Final;
-                        }
-                        // if the leaf is deterministic, we can also set the deterministic flag
-                        if ((leaf.flags & IFTGraphNode.Flags.Deterministic) > 0) {
-                            curr.flags |= IFTGraphNode.Flags.Deterministic;
-                        }
-                    } else {
-                        // this node has been previously visited
-                        // so we just need to check if there are any contradictions, and update or error accordingly
-
-                        mixin(LOG_DEBUG!(`format("   node already propagated, checking flags")`));
-
-                        // if this node is final, but the leaf is not, we have a contradiction
-                        if ((curr.flags & IFTGraphNode.Flags.Final) > 0 &&
-                            (leaf.flags & IFTGraphNode.Flags.Final) == 0) {
-                            enforce(false, format("contradiction in node flags: %s (%s) is final, but %s (%s) is not",
-                                    curr, curr.info_view.node.type, leaf, leaf.info_view.node.type));
-                        }
-
-                        // if this node is deterministic, but the leaf is not, we should update the node to be not deterministic
-                        if ((curr.flags & IFTGraphNode.Flags.Deterministic) > 0 &&
-                            (leaf.flags & IFTGraphNode.Flags.Deterministic) == 0) {
-                            curr.flags &= ~IFTGraphNode.Flags.Deterministic;
-                        }
-                    }
-
-                    // queue all nodes pointed to by the current node
-                    auto targets = ift_graph.get_edges_from(curr);
-                    foreach (k, target; targets) {
-                        auto pointed_target = target.dst;
-                        if (!visited.get(pointed_target, false)) {
-                            mixin(LOG_DEBUG!(`format("    queuing node: %s", pointed_target)`));
-                            unvisited.insertFront(pointed_target);
-                        }
-                    }
+                auto children = ift_graph.get_edges_from(node);
+                foreach (i, edge; children) {
+                    auto child = edge.dst;
+                    if ((child.flags & IFTGraphNode.Flags.Nondeterministic) == 0) {
+                        child.flags |= IFTGraphNode.Flags.Nondeterministic;
+                        prop_nd_nodes.insertBack(child);
+                    } 
                 }
 
                 version (analysis_log)
-                    atomicOp!"+="(this.log_propagation_nodes_walked, propagation_nodes_walked_acc);
+                    atomicOp!"+="(this.log_propagation_nodes_walked, 1);
             }
 
             auto elapsed = MonoTime.currTime - tmr_start;
@@ -991,9 +940,10 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             auto tmr_start = MonoTime.currTime;
 
             // rebuild caches for the graph
+            ift_graph.invalidate_caches();
             mixin(LOG_INFO!(`format(
                 "rebuilding graph caches (%d nodes, %d edges)", ift_graph.nodes.length, ift_graph.edges.length)`));
-            ift_graph.rebuild_neighbors_cache();
+            ift_graph.rebuild_caches();
             mixin(LOG_INFO!(`" done building graph caches"`));
 
             auto elapsed = MonoTime.currTime - tmr_start;
@@ -1001,21 +951,21 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                 log_cache_build_time = elapsed.total!"usecs";
         }
 
-        void analyze_subtrees() {
-            mixin(LOG_INFO!(`"analyzing subtrees"`));
+        // void analyze_subtrees() {
+        //     mixin(LOG_INFO!(`"analyzing subtrees"`));
 
-            auto num_final_graph_verts = final_graph_verts.length;
-            foreach (i, final_vert; final_graph_verts) {
-                // analyze the subtree from this vert
-                // mixin(LOG_INFO!(`" analyzing subtrees for vert: %s", final_vert`));
-                mixin(LOG_TRACE!(
-                        `" analyzing subtrees for vert (%d/%d): %s", i, num_final_graph_verts, final_vert`));
+        //     auto num_final_graph_verts = final_graph_verts.length;
+        //     foreach (i, final_vert; final_graph_verts) {
+        //         // analyze the subtree from this vert
+        //         // mixin(LOG_INFO!(`" analyzing subtrees for vert: %s", final_vert`));
+        //         mixin(LOG_TRACE!(
+        //                 `" analyzing subtrees for vert (%d/%d): %s", i, num_final_graph_verts, final_vert`));
 
-                // auto dep_subtree = find_graph_node_dependency_subtree(final_vert);
+        //         // auto dep_subtree = find_graph_node_dependency_subtree(final_vert);
 
-                // // store subtree
-                // ift_subtrees ~= dep_subtree;
-            }
-        }
+        //         // // store subtree
+        //         // ift_subtrees ~= dep_subtree;
+        //     }
+        // }
     }
 }
