@@ -416,7 +416,7 @@ template IFTAnalysisGraph(TRegWord, TMemWord, TRegSet) {
     struct IFTGraphNode {
         /// the information as it existed in a point in time
         InfoView info_view;
-        Flags flags = Flags.None;
+        ubyte flags = Flags.None;
 
         this(InfoView info_view) {
             this.info_view = info_view;

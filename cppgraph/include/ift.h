@@ -114,7 +114,7 @@ IFT_TEMPLATE class IFTAnalysisGraph {
 public:
   struct IFTGraphNode {
     typename InfoLog<TRegWord, TMemWord, TRegSet>::InfoView info_view;
-    IFTGraphNodeFlags flags = IFTGraphNodeFlags::IFTGraphNodeFlags_None;
+    uint8_t flags = IFTGraphNodeFlags::IFTGraphNodeFlags_None;
 
     public:
       std::string to_string() const {
@@ -145,6 +145,15 @@ enum GenericRegSet {
 };
 
 // alias it to a shorter name
+<<<<<<< Updated upstream
 typedef IFTAnalysisGraph<uint64_t, int8_t, GenericRegSet>::CompactGraph GenericIFTCompactGraph;
 typedef IFTAnalysisGraph<uint64_t, int8_t, GenericRegSet>::IFTGraphNode GenericIFTGraphNode;
 typedef IFTAnalysisGraph<uint64_t, int8_t, GenericRegSet>::IFTGraphEdge GenericIFTGraphEdge;
+=======
+// using GenericIFTCompactGraph =
+//     IFTAnalysisGraph<uint64_t, int8_t, GenericRegSet>::IFTCompactGraph;
+using GenericIFTCompactGraph =
+    IFTAnalysisGraph<unsigned long, signed char, GenericRegSet>::CompactGraph;
+using GenericIFTGraphNode =
+    IFTAnalysisGraph<unsigned long, signed char, GenericRegSet>::IFTGraphNode;
+>>>>>>> Stashed changes

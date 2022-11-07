@@ -473,7 +473,7 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                 }
 
                 // update node flags
-                auto vert_flags = IFTGraphNode.Flags.Propagated;
+                ubyte vert_flags = IFTGraphNode.Flags.Propagated;
                 if (curr_node.is_final())
                     vert_flags |= IFTGraphNode.Flags.Final;
                 if (!curr_node.is_deterministic())
