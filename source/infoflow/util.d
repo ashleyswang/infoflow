@@ -7,7 +7,7 @@ import std.conv;
 import std.uni;
 import std.range;
 import std.algorithm;
-import std.typecons;
+public import nullablesugar;
 
 enum InfoflowVerbosity {
     debug_ = 3,
@@ -63,19 +63,5 @@ pragma(inline, true) bool unlikely(bool value) {
         return llvm_expect!bool(value, false);
     } else {
         return value;
-    }
-}
-
-pragma(inline, true) {
-    Nullable!T no(T)() {
-        return Nullable!T.init;
-    }
-
-    bool has(T)(Nullable!T value) {
-        return !value.isNull;
-    }
-
-    Nullable!T some(T)(T value) {
-        return Nullable!T(value);
     }
 }
