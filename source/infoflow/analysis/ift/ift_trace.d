@@ -120,7 +120,8 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             if (enable_ift_graph) {
                 if (enable_ift_graph_analysis) {
                     rebuild_graph_caches();
-                    propagate_node_flags();
+                    print_graph_info();
+                    // propagate_node_flags();
                 }
             }
 
@@ -467,6 +468,8 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                     vert_flags |= IFTGraphNode.Flags.Final;
                 if (curr_node.is_deterministic())
                     vert_flags |= IFTGraphNode.Flags.Deterministic;
+                if (!curr_node.is_deterministic())
+                    vert_flags |= IFTGraphNode.Flags.Nondeterministic;
                 curr_graph_vert.flags = vert_flags;
 
                 // connect ourselves to our parent (parent comes in the future, so edge us -> parent)
@@ -885,9 +888,22 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
             return subtree_nodes.data;
         }
 
+        void print_graph_info() {
+            foreach (i, vert; ift_graph.nodes) {
+                writefln("%s %d", vert.toString(), (vert.flags & IFTGraphNode.Flags.Nondeterministic) > 0);
+            }
+
+            foreach (i, edge; ift_graph.edges) {
+                writefln("%s -> %s", edge.src.toString(), edge.dst.toString());
+            }
+        }
+
+
         void propagate_node_flags() {
             // propagate the flow of node flags
             mixin(LOG_INFO!(`"propagating node flags"`));
+
+            writefln("nodes: %d, edges: %d", ift_graph.nodes.length, ift_graph.edges.length);
 
             auto tmr_start = MonoTime.currTime;
 
@@ -908,7 +924,6 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
                     `format(" propagating %d leaf nodes", propagated_leaf_nodes.data.length)`));
 
             auto unvisited = DList!IFTGraphNode();
-            bool[IFTGraphNode] visited;
 
             foreach (i, leaf; propagated_leaf_nodes.data) {
                 mixin(LOG_TRACE!(`format(" propagating flags for node: %s", leaf)`));
@@ -920,6 +935,7 @@ template IFTAnalysis(TRegWord, TMemWord, TRegSet) {
 
                 // if (leaf !in visited)
                 //     unvisited.insertFront(leaf);
+                bool[IFTGraphNode] visited;
                 unvisited.insertFront(leaf);
 
                 // now propagate upward
